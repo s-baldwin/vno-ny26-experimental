@@ -3,9 +3,10 @@ import * as fs from "https://deno.land/std@0.99.0/fs/mod.ts";
 import * as path from "https://deno.land/std@0.99.0/path/mod.ts";
 import * as vueCompiler from "https://denopkg.com/crewdevio/vue-deno-compiler/mod.ts";
 import renderer from "https://deno.land/x/vue_server_renderer@0.0.4/mod.js";
-import { Language, minify } from "https://deno.land/x/minifier@v1.1.1/mod.ts";
+import { minifyHTML } from "https://deno.land/x/minifier@v1.1.1/mod.ts";
 import { Component, getComponents, getTags } from "./components.ts";
-import { getExport, Mapped } from "./utils.ts";
+import { getExport, Mapped, Path } from "./utils.ts";
+const __dirname = new URL(".", import.meta.url).pathname;
 
 export const getComponent = async (filePath: string) => {
   const name = path.parse(filePath).name;
@@ -30,7 +31,7 @@ export const getComponent = async (filePath: string) => {
 export const toHtml = async (
   filePath: string,
   outfile: string,
-  id?: string,
+  pathData: Path = { params: {} },
   cmps?: Mapped<Component>,
 ) => {
   // components
@@ -66,7 +67,12 @@ export const toHtml = async (
 
   // get data
   const data = await Promise.resolve(
-    obj.default.getStaticProps ? obj.default.getStaticProps(id) : {},
+    obj.default.getStaticProps
+      ? obj.default.getStaticProps({
+        ...pathData,
+        fetch,
+      })
+      : {},
   );
 
   // page component
@@ -80,7 +86,7 @@ export const toHtml = async (
   });
 
   // html
-  const html = await new Promise<string>((resolve, reject) => {
+  const bodyHtml = await new Promise<string>((resolve, reject) => {
     renderer(App, (err: any, html: string) => {
       if (err) {
         return reject(err);
@@ -89,11 +95,29 @@ export const toHtml = async (
     });
   });
 
+  // styles
+  const styles = source.descriptor.styles.map((style: any) => style.content)
+    .join("\n");
+
   // write to file
   await fs.ensureDir(path.parse(outfile).dir);
+
+  // setup template
+  const htmlTemplate = await Deno.readTextFile(
+    path.join(__dirname, "template.html"),
+  );
+
+  // add styles and content
+  const html = htmlTemplate.replace(/<\/head>/, `<style>${styles}</style>$&`)
+    .replace(
+      /<body>/,
+      `$&${bodyHtml}`,
+    );
+
+  // write the html file
   return Deno.writeTextFile(
     outfile,
-    minify(Language.HTML, html),
+    minifyHTML(html, { minifyCSS: true, minifyJS: true }),
   );
 };
 

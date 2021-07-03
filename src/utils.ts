@@ -4,11 +4,20 @@ import { Language, minify } from "https://deno.land/x/minifier@v1.1.1/mod.ts";
 
 export type Mapped<T> = { [key: string]: T };
 
+export interface Path {
+  params: Mapped<string>;
+}
+
+export interface Context {
+  params: Mapped<string>;
+  fetch: typeof fetch;
+}
+
 interface VueExport {
   default: {
     name: string;
-    getStaticProps?: (id?: string) => any;
-    getStaticPaths?: () => any;
+    getStaticProps?: (data: Context) => any;
+    getStaticPaths?: () => Promise<Path[]> | Path[];
   };
 }
 

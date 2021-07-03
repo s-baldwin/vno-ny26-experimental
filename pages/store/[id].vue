@@ -8,13 +8,18 @@
 
 <script>
 export default {
-  getStaticProps(id) {
+  async getStaticProps(ctx) {
+    console.log(await ctx.fetch("https://deno.land/"));
     return {
-      title: id || "Default",
+      title: ctx.params.id || "Default",
     };
   },
   getStaticPaths() {
-    return ["apple", "google", "facebook"];
+    return [
+      { params: { id: "apple" } },
+      { params: { id: "google" } },
+      { params: { id: "facebook" } },
+    ];
   },
 };
 </script>
