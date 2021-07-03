@@ -10,6 +10,7 @@ export default {
   data() {
     return { other: (this.label || "button") + " - other" };
   },
+  css: ["assets/index.css", "assets/button.css"],
 };
 </script>
 

@@ -13,11 +13,12 @@ export interface Context {
   fetch: typeof fetch;
 }
 
-interface VueExport {
+export interface VueExport {
   default: {
     name: string;
     getStaticProps?: (data: Context) => any;
     getStaticPaths?: () => Promise<Path[]> | Path[];
+    css?: string[];
   };
 }
 

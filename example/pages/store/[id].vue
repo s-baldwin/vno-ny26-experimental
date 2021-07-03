@@ -1,7 +1,6 @@
 <template>
   <div id="app">
     <h1>{{ title }}</h1>
-    <Navbar />
     <a href="/">Back</a>
   </div>
 </template>
@@ -9,7 +8,7 @@
 <script>
 export default {
   async getStaticProps(ctx) {
-    console.log(await ctx.fetch("https://deno.land/"));
+    await ctx.fetch("https://deno.land/");
     return {
       title: ctx.params.id || "Default",
     };

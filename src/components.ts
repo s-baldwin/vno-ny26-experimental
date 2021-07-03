@@ -1,9 +1,9 @@
-import Vue from "https://deno.land/x/vue_js@0.0.5/mod.js";
-import * as fs from "https://deno.land/std@0.83.0/fs/mod.ts";
-import * as vueCompiler from "https://denopkg.com/crewdevio/vue-deno-compiler/mod.ts";
-import renderer from "https://deno.land/x/vue_server_renderer@0.0.4/mod.js";
-import * as path from "https://deno.land/std@0.99.0/path/mod.ts";
-import { getExport, Mapped } from "./utils.ts";
+import Vue from 'https://deno.land/x/vue_js@0.0.5/mod.js';
+import * as fs from 'https://deno.land/std@0.83.0/fs/mod.ts';
+import * as vueCompiler from 'https://denopkg.com/crewdevio/vue-deno-compiler/mod.ts';
+import renderer from 'https://deno.land/x/vue_server_renderer@0.0.4/mod.js';
+import * as path from 'https://deno.land/std@0.99.0/path/mod.ts';
+import { getExport, Mapped, VueExport } from './utils.ts';
 
 export interface Component {
   name: string;
@@ -11,14 +11,14 @@ export interface Component {
   raw: string;
   source: any;
   deps: Set<string>;
-  exports: any;
+  exports: VueExport['default'];
+  css: string[];
+  vueCmp: any;
 }
 
 // get the unique tags from html
 export const getTags = (html: string) => {
-  const matches = html.matchAll(
-    /(?<=<)[\w\d]+(?=[\s*|>|/>])/gi,
-  );
+  const matches = html.matchAll(/(?<=<)[\w\d]+(?=[\s*|>|/>])/gi);
 
   return new Set([...matches].map((match) => match[0]));
 };
@@ -70,10 +70,50 @@ const checkCycle = (cmps: Mapped<Component>) => {
   return false;
 };
 
-// parse components
-const parse = (cmps: Mapped<Component>) => {
-  const parsed: Mapped<any> = {};
+const getCss = (cmps: Mapped<Component>) => {
+  const seen = new Set<string>();
 
+  const dfs = (cmp: Component) => {
+    const seenCss = new Set(cmp.css);
+
+    for (const depName of cmp.deps) {
+      if (!seen.has(depName)) {
+        seen.add(depName);
+        dfs(cmps[depName]);
+      }
+
+      for (const css of cmps[depName].css) {
+        if (!seenCss.has(css)) {
+          seenCss.add(css);
+          cmp.css.push(css);
+        }
+      }
+    }
+  };
+
+  for (const cmp of Object.values(cmps)) {
+    if (!seen.has(cmp.name)) {
+      seen.add(cmp.name);
+      dfs(cmp);
+    }
+  }
+};
+
+// assets
+export const getAssets = async () => {
+  const assets: Mapped<string> = {};
+
+  for await (const file of fs.walk(path.join(Deno.cwd(), './assets'), {
+    includeDirs: false,
+  })) {
+    assets[file.path] = await Deno.readTextFile(file.path);
+  }
+
+  return assets;
+};
+
+// parse components
+const parse = (cmps: Mapped<Component>, assets: Mapped<string>) => {
   const seen = new Set<string>();
 
   const dfs = (cmp: Component) => {
@@ -84,31 +124,37 @@ const parse = (cmps: Mapped<Component>) => {
         seen.add(depName);
         dfs(cmps[depName]);
       }
-      components[depName] = parsed[depName];
+      components[depName] = cmps[depName].vueCmp;
     }
 
-    parsed[cmp.name] = (Vue as any).component(cmp.name, {
+    const vueCmp = (Vue as any).component(cmp.name, {
       ...cmp.exports,
       name: cmp.name,
       template: cmp.source.descriptor.template.content,
       components,
     });
+
+    cmp.vueCmp = vueCmp;
   };
 
   for (const cmp of Object.values(cmps)) {
     seen.add(cmp.name);
     dfs(cmp);
   }
-
-  return parsed;
 };
 
 // get the vue components
-export const getComponents = async () => {
+export const getComponents = async (assets?: Mapped<string>) => {
+  if (!assets) {
+    assets = await getAssets();
+  }
+
   const cmps: Mapped<Component> = {};
 
   // grab all components from components folder
-  for await (const file of fs.walk("./components", { exts: ["vue"] })) {
+  for await (const file of fs.walk(path.join(Deno.cwd(), './components'), {
+    exts: ['vue'],
+  })) {
     // const name = file.name.match(/.*(?=.vue)/)!.toString();
     const name = path.parse(file.path).name;
     const raw = await Deno.readTextFile(file.path);
@@ -122,6 +168,8 @@ export const getComponents = async () => {
       source,
       deps: new Set(),
       exports: exports.default,
+      css: exports.default.css || [],
+      vueCmp: null,
     };
   }
 
@@ -131,20 +179,23 @@ export const getComponents = async () => {
   }
 
   if (checkCycle(cmps)) {
-    throw Error("cycle exists");
+    throw Error('cycle exists');
   }
 
-  return parse(cmps);
+  getCss(cmps);
+  parse(cmps, assets);
+
+  return cmps;
 };
 
 const main = async () => {
   const cmps = await getComponents();
 
   const app = new Vue({
-    name: "app",
-    template: "<div><h1>My App</h1><Navbar /></div>",
+    name: 'app',
+    template: '<div><h1>My App</h1><Navbar /></div>',
     components: {
-      Navbar: cmps["Navbar"],
+      Navbar: cmps['Navbar'].vueCmp,
     },
   });
 

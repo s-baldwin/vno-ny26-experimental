@@ -7,6 +7,7 @@ export default {
   data() {
     return { label: "navbar label" };
   },
+  css: ["assets/index.css", "assets/navbar.css"],
 };
 </script>
 
