@@ -83,10 +83,11 @@ export const toHtml = async (params: ToHtmlParams) => {
   const assets = await getAssets();
   let cmpCss = '\n';
   for (const cssPath of [...css].reverse()) {
-    if (!assets[cssPath]) {
+    const fullCssPath = path.join(Deno.cwd(), cssPath);
+    if (!assets[fullCssPath]) {
       throw Error('invalid css');
     }
-    cmpCss += `${assets[cssPath]}\n`;
+    cmpCss += `${assets[fullCssPath]}\n`;
   }
 
   // get data

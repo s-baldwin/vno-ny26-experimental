@@ -10,7 +10,8 @@ const genPages = async () => {
     exts: ['vue'],
   })) {
     const parsed = path.parse(file.path);
-    const relPath = parsed.dir.replace(/^.?pages\/?/, '');
+    const relPath = parsed.dir.replace(path.join(Deno.cwd(), './pages'), '');
+
     const name = parsed.name;
 
     // dynamic
