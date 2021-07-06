@@ -72,7 +72,7 @@ const watchSource = async () => {
   }
 };
 
-const main = async () => {
+export const startDev = async () => {
   await generate();
   startReloadServer();
   startServer();
@@ -81,5 +81,5 @@ const main = async () => {
 };
 
 if (import.meta.main) {
-  main();
+  startDev();
 }

@@ -1,6 +1,7 @@
 <template>
   <div id="app">
     <h1>{{ title }}</h1>
+    <p>Hello there</p>
     <Navbar />
     <img
       src="https://svgshare.com/i/SNz.svg"
@@ -17,7 +18,7 @@
 export default {
   getStaticProps() {
     return {
-      title: "My App 2",
+      title: "My App 3",
     };
   },
 };

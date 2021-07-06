@@ -1,6 +1,6 @@
 <template>
   <div class="button">
-    <button>{{ label }} * {{ other }}</button>
+    <button>{{ label }}</button>
   </div>
 </template>
 
