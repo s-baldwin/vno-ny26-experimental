@@ -1,6 +1,7 @@
 <template>
   <div id="app">
     <h1>{{ title }}</h1>
+    <p>store stuff</p>
     <a href="/">Back</a>
   </div>
 </template>

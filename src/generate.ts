@@ -7,7 +7,11 @@ import { getAssets } from './assets.ts';
 /**
  * Statically generate project.
  */
-const generate = async () => {
+export const generate = async () => {
+  const start = Date.now();
+
+  await fs.emptyDir(path.join(Deno.cwd(), 'dist'));
+
   const cmps = await getComponents();
   const assets = await getAssets([/\.css$/i]);
 
@@ -36,7 +40,7 @@ const generate = async () => {
         const id = pathData.params[name.slice(1, name.length - 1)];
 
         // create an output location using the id
-        const output = path.join(Deno.cwd(), 'dist', relPath, id + '.html');
+        const output = path.join(Deno.cwd(), 'dist', relPath, id, 'index.html');
 
         await genHtml({
           entry: file.path,
@@ -44,22 +48,31 @@ const generate = async () => {
           pathData,
           cmps,
           assets,
+          reload: true,
         });
       }
     } else {
       // named pages
 
       // create an output location based on the name
-      const output = path.join(Deno.cwd(), 'dist', relPath, name + '.html');
+      const output = path.join(
+        Deno.cwd(),
+        'dist',
+        relPath,
+        name == 'index' ? 'index.html' : `${name}/index.html`
+      );
 
       await genHtml({
         entry: file.path,
         output: output,
         cmps,
         assets,
+        reload: true,
       });
     }
   }
+
+  console.log(`build took ${Date.now() - start}ms`);
 };
 
 if (import.meta.main) {

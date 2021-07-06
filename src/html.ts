@@ -19,6 +19,7 @@ export interface GenHtmlParams {
   pathData?: PathData;
   cmps?: Mapped<Component>;
   assets?: Mapped<string>;
+  reload?: boolean;
 }
 
 /**
@@ -116,10 +117,20 @@ export const genHtml = async (params: GenHtmlParams) => {
   );
 
   // insert styles and body
-  const html = htmlTemplate
+  let html = htmlTemplate
     .replace(/<\/head>/, `<style>${rawStyles}</style>$&`)
     .replace(/<body>/, `$&${bodyHtml}`);
 
+  // add reload
+  if (params.reload) {
+    const reloadScript = minify(
+      Language.JS,
+      await Deno.readTextFile(path.join(__dirname, 'reload.js'))
+    );
+    html = html.replace(/<\/body>/, `<script>${reloadScript}</script>$&`);
+  }
+
+  // minify
   const final = minifyHTML(html, { minifyCSS: true, minifyJS: true });
 
   // write the html file

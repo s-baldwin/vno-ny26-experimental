@@ -9,7 +9,7 @@
       width="450"
       height="450"
     />
-    <a href="/store/default">Store</a>
+    <a href="/store/default">Stuff</a>
   </div>
 </template>
 
@@ -17,7 +17,7 @@
 export default {
   getStaticProps() {
     return {
-      title: "hello",
+      title: "My App 2",
     };
   },
 };

@@ -66,3 +66,20 @@ export const getTags = (html: string) => {
 
   return new Set([...matches].map((match) => match[0]));
 };
+
+/**
+ * Debounce a function.
+ */
+export const debounce = (func: (...args: any) => any, duration = 300) => {
+  let id: any = null;
+
+  return (...args: any) => {
+    if (id) {
+      clearTimeout(id);
+    }
+
+    id = setTimeout(() => {
+      func(...args);
+    }, duration);
+  };
+};
