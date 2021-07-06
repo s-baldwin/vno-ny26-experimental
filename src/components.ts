@@ -3,7 +3,7 @@ import * as fs from 'https://deno.land/std@0.83.0/fs/mod.ts';
 import * as vueCompiler from 'https://denopkg.com/crewdevio/vue-deno-compiler/mod.ts';
 import renderer from 'https://deno.land/x/vue_server_renderer@0.0.4/mod.js';
 import * as path from 'https://deno.land/std@0.99.0/path/mod.ts';
-import { getExport, Mapped, VueExport } from './utils.ts';
+import { getExport, getTags, Mapped, VueExport } from './utils.ts';
 
 export interface Component {
   name: string;
@@ -16,15 +16,49 @@ export interface Component {
   vueCmp: any;
 }
 
-// get the unique tags from html
-export const getTags = (html: string) => {
-  const matches = html.matchAll(/(?<=<)[\w\d]+(?=[\s*|>|/>])/gi);
+/**
+ * Detect if there are any circular dependencies within components.
+ */
+const checkDepsCycle = (cmps: Mapped<Component>) => {
+  // keep track of seen and completed components
+  const seen = new Set<string>();
+  const completed = new Set<string>();
 
-  return new Set([...matches].map((match) => match[0]));
+  // perform dfs
+  const dfs = (cmp: Component) => {
+    // loop through dependencies
+    for (const depName of cmp.deps) {
+      // if a component is seen but not completed, then that means the component has remaining dependencies that have not been completed
+      if (seen.has(depName) && !completed.has(depName)) {
+        return true;
+      }
+
+      // perform dfs on dependency
+      if (!seen.has(depName)) {
+        seen.add(depName);
+        if (dfs(cmps[depName])) return true;
+      }
+    }
+
+    // have completed all depencies so component is complete
+    completed.add(cmp.name);
+    return false;
+  };
+
+  // check all components
+  for (const cmp of Object.values(cmps)) {
+    if (!seen.has(cmp.name)) {
+      seen.add(cmp.name);
+      if (dfs(cmp)) return true;
+    }
+  }
+  return false;
 };
 
-// find dependencies for each component
-export const getDeps = (cmp: Component, cmps: Mapped<Component>) => {
+/**
+ * Add dependency info to a component.
+ */
+export const addComponentDeps = (cmp: Component, cmps: Mapped<Component>) => {
   const deps = new Set<string>();
 
   const tags = getTags(cmp.source.descriptor.template.content as string);
@@ -38,50 +72,34 @@ export const getDeps = (cmp: Component, cmps: Mapped<Component>) => {
   return deps;
 };
 
-// detect if there are any circular dependencies within components
-const checkCycle = (cmps: Mapped<Component>) => {
+/**
+ * Add depency info to all components.
+ */
+const addComponentsDeps = (cmps: Mapped<Component>) => {
+  for (const cmp of Object.values(cmps)) {
+    cmp.deps = addComponentDeps(cmp, cmps);
+  }
+};
+
+/**
+ * Add css info to all components, a component should have css for itself and all of its dependent components.
+ */
+const addCssDeps = (cmps: Mapped<Component>) => {
   const seen = new Set<string>();
-  const completed = new Set<string>();
 
   // perform dfs
   const dfs = (cmp: Component) => {
-    for (const depName of cmp.deps) {
-      if (seen.has(depName) && !completed.has(depName)) {
-        return true;
-      }
-
-      if (!seen.has(depName)) {
-        seen.add(depName);
-        if (dfs(cmps[depName])) return true;
-      }
-    }
-
-    completed.add(cmp.name);
-    return false;
-  };
-
-  // check all components
-  for (const cmp of Object.values(cmps)) {
-    if (!seen.has(cmp.name) && dfs(cmp)) {
-      seen.add(cmp.name);
-      return true;
-    }
-  }
-  return false;
-};
-
-const getCss = (cmps: Mapped<Component>) => {
-  const seen = new Set<string>();
-
-  const dfs = (cmp: Component) => {
     const seenCss = new Set(cmp.css);
 
+    // loop through dependencies
     for (const depName of cmp.deps) {
+      // complete dependencies first
       if (!seen.has(depName)) {
         seen.add(depName);
         dfs(cmps[depName]);
       }
 
+      // add unique css from dependency
       for (const css of cmps[depName].css) {
         if (!seenCss.has(css)) {
           seenCss.add(css);
@@ -91,6 +109,7 @@ const getCss = (cmps: Mapped<Component>) => {
     }
   };
 
+  // do for all components
   for (const cmp of Object.values(cmps)) {
     if (!seen.has(cmp.name)) {
       seen.add(cmp.name);
@@ -99,95 +118,105 @@ const getCss = (cmps: Mapped<Component>) => {
   }
 };
 
-// assets
-export const getAssets = async () => {
-  const assets: Mapped<string> = {};
-
-  for await (const file of fs.walk(path.join(Deno.cwd(), './assets'), {
-    includeDirs: false,
-  })) {
-    assets[file.path] = await Deno.readTextFile(file.path);
-  }
-
-  return assets;
-};
-
-// parse components
-const parse = (cmps: Mapped<Component>, assets: Mapped<string>) => {
+/**
+ * Add vue component to all components.
+ */
+const addVue = (cmps: Mapped<Component>) => {
   const seen = new Set<string>();
 
+  // perform dfs
   const dfs = (cmp: Component) => {
     const components: { [name: string]: any } = {};
 
+    // complete dependencies first
     for (const depName of cmp.deps) {
       if (!seen.has(depName)) {
         seen.add(depName);
         dfs(cmps[depName]);
       }
+
+      // add vue component dependency, needed for vue
       components[depName] = cmps[depName].vueCmp;
     }
 
+    // create the vue component
     const vueCmp = (Vue as any).component(cmp.name, {
       ...cmp.exports,
       name: cmp.name,
-      template: cmp.source.descriptor.template.content,
+      template: cmp.source.descriptor.template.content as string,
       components,
     });
 
+    // add the vue component
     cmp.vueCmp = vueCmp;
   };
 
+  // do for all components
   for (const cmp of Object.values(cmps)) {
     seen.add(cmp.name);
     dfs(cmp);
   }
 };
 
-// get the vue components
-export const getComponents = async (assets?: Mapped<string>) => {
-  if (!assets) {
-    assets = await getAssets();
-  }
+/**
+ * Get the info for a vue component.
+ */
+export const getComponent = async (filePath: string): Promise<Component> => {
+  const name = path.parse(filePath).name;
 
+  // read file
+  const raw = await Deno.readTextFile(filePath);
+
+  // parse
+  const source = vueCompiler.parse(raw);
+
+  // get script export
+  const obj = await getExport(source.descriptor.script.content as string);
+
+  return {
+    name,
+    path: filePath,
+    raw,
+    source,
+    deps: new Set(),
+    exports: obj.default,
+    css: obj.default.css || [],
+    vueCmp: null,
+  };
+};
+
+/**
+ * Get all project vue components.
+ */
+export const getComponents = async () => {
   const cmps: Mapped<Component> = {};
 
-  // grab all components from components folder
-  for await (const file of fs.walk(path.join(Deno.cwd(), './components'), {
+  // get components from components folder
+  for await (const file of fs.walk(path.join(Deno.cwd(), 'components'), {
     exts: ['vue'],
   })) {
-    // const name = file.name.match(/.*(?=.vue)/)!.toString();
-    const name = path.parse(file.path).name;
-    const raw = await Deno.readTextFile(file.path);
-    const source = vueCompiler.parse(raw);
-    const exports = await getExport(source.descriptor.script.content as string);
-
-    cmps[name] = {
-      name,
-      path: file.path,
-      raw,
-      source,
-      deps: new Set(),
-      exports: exports.default,
-      css: exports.default.css || [],
-      vueCmp: null,
-    };
+    const cmp = await getComponent(file.path);
+    cmps[cmp.name] = cmp;
   }
 
-  // find dependencies for each component
-  for (const cmp of Object.values(cmps)) {
-    cmp.deps = getDeps(cmp, cmps);
-  }
+  // add component dependencies
+  addComponentsDeps(cmps);
 
-  if (checkCycle(cmps)) {
+  // check if a cycle exists
+  if (checkDepsCycle(cmps)) {
     throw Error('cycle exists');
   }
 
-  getCss(cmps);
-  parse(cmps, assets);
+  // add css dependencies
+  addCssDeps(cmps);
+
+  // add vue components
+  addVue(cmps);
 
   return cmps;
 };
 
+// DEVELOPMENT ONLY
 const main = async () => {
   const cmps = await getComponents();
 
